@@ -277,12 +277,14 @@ class FakeLM:
 
     def __init__(self, rates: dict[str, float], wrong=()):
         self.rates, self.wrong, self.seen, self.decoder = rates, set(wrong), [], None
+        self.system_prompts = []  # the system_prompt every chat() call received
 
     @contextmanager
     def use(self, name: str):
         yield
 
-    def chat(self, messages: list[dict], prefill: str = "") -> str:
+    def chat(self, messages: list[dict], prefill: str = "", system_prompt: str | None = None) -> str:
+        self.system_prompts.append(system_prompt)
         return json.dumps(dict(messages=messages, prefill=prefill))
 
     def letter_logits(self, prompts: list[str], desc: str = "", prefill: str | None = None) -> np.ndarray:

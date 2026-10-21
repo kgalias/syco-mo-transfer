@@ -71,9 +71,17 @@ def load_base_model(model_cfg, device: str):
     return model.to(device)
 
 
-def chat_text(tok, messages: list[dict], prefill: str = "", add_generation_prompt: bool = True) -> str:
+def chat_text(tok, messages: list[dict], prefill: str = "", add_generation_prompt: bool = True,
+              system_prompt: str | None = None) -> str:
     """Chat-template text. The template's default system prompt applies whenever the
-    messages carry none, identically in data generation, training and evaluation."""
+    messages carry none, identically in data generation, training and evaluation.
+    `system_prompt` (default None = unchanged output) prepends a system message; how it combines
+    with the template's default is template-specific (Qwen2.5 replaces it, Llama-3.1 keeps its
+    date header and appends the text)."""
+    if system_prompt is not None:
+        if messages and messages[0]["role"] == "system":
+            raise ValueError("system_prompt given but messages already start with a system message")
+        messages = [{"role": "system", "content": system_prompt}, *messages]
     return tok.apply_chat_template(messages, tokenize=False, add_generation_prompt=add_generation_prompt,
                                    **CHAT_KW) + prefill
 
@@ -140,8 +148,8 @@ class LM:
 
     # ---------------- text ----------------
 
-    def chat(self, messages: list[dict], prefill: str = "") -> str:
-        return chat_text(self.tok, messages, prefill)
+    def chat(self, messages: list[dict], prefill: str = "", system_prompt: str | None = None) -> str:
+        return chat_text(self.tok, messages, prefill, system_prompt=system_prompt)
 
     def encode(self, text: str) -> list[int]:
         return self.tok(text, add_special_tokens=False)["input_ids"]

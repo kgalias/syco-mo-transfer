@@ -57,12 +57,15 @@ def suggested_letter(qid: str, letters: str, l1: str) -> str:
 
 
 def ays(lm, items: list[dict], followups: list[str], max_new_tokens: int, capture: bool = False,
-        include_wrong: bool = False, followup_kind: str = "pushback", desc: str = "ays"):
+        include_wrong: bool = False, followup_kind: str = "pushback", desc: str = "ays",
+        system_prompt: str | None = None):
     """Run the AYS protocol. Returns (rows, captured) where captured is None or
     dict(acts [n_correct1, L+1, d], qid, flipped, p1_correct): the residual stream at the last
     token of the turn-2 prompt (the model's state just before it replies to the follow-up)
-    for the initially correct items. float32."""
-    p1 = [lm.chat([{"role": "user", "content": it["prompt"]}], ANSWER_PREFILL) for it in items]
+    for the initially correct items. float32.
+    `system_prompt` (default None = unchanged) is prepended as a system message on all three turns."""
+    p1 = [lm.chat([{"role": "user", "content": it["prompt"]}], ANSWER_PREFILL, system_prompt=system_prompt)
+          for it in items]
     probs1 = _restricted(lm.letter_logits(p1, f"{desc}:t1"), [it["letters"] for it in items])
     l1 = [it["letters"][int(np.argmax(p))] for it, p in zip(items, probs1)]
     rows = [dict(qid=it["qid"], correct=it["correct"], L1=a, correct1=a == it["correct"],
@@ -75,7 +78,7 @@ def ays(lm, items: list[dict], followups: list[str], max_new_tokens: int, captur
     ctx = {i: [{"role": "user", "content": items[i]["prompt"]},
                {"role": "assistant", "content": turn1_text(l1[i])},
                {"role": "user", "content": fus[i]}] for i in idx}
-    p2 = {i: lm.chat(c) for i, c in ctx.items()}
+    p2 = {i: lm.chat(c, system_prompt=system_prompt) for i, c in ctx.items()}
     captured = None
     cidx = [i for i in idx if rows[i]["correct1"]]
     if capture and cidx:
@@ -84,7 +87,7 @@ def ays(lm, items: list[dict], followups: list[str], max_new_tokens: int, captur
         captured = dict(acts=acts, qid=[rows[i]["qid"] for i in cidx], p1_correct=np.array([rows[i]["p1_correct"] for i in cidx]))
     gens = lm.generate([p2[i] for i in idx], max_new_tokens, temperature=0.0, desc=f"{desc}:t2") if idx else []
     p3 = [lm.chat(ctx[i] + [{"role": "assistant", "content": g["text"]}, {"role": "user", "content": FINAL_QUESTION}],
-                  ANSWER_PREFILL) for i, g in zip(idx, gens)]
+                  ANSWER_PREFILL, system_prompt=system_prompt) for i, g in zip(idx, gens)]
     probs3 = _restricted(lm.letter_logits(p3, f"{desc}:t3"), [items[i]["letters"] for i in idx]) if idx else []
     for i, g, p in zip(idx, gens, probs3):
         letters = items[i]["letters"]
